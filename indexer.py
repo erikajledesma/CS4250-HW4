@@ -26,19 +26,19 @@ document_list = ["After the medication, headache and nausea were reported by the
             "The medication caused a headache and nausea, but no dizziness was reported."]
 
 # instantiate the vectorizer object
-tfidfvectorizer = TfidfVectorizer(analyzer='word', ngram_range=(1,3))
+vectorizer = TfidfVectorizer(analyzer='word', ngram_range=(1,3))
 
 # convert document set into a matrix using .fit_transform()
-tfidfvectorizer.fit(document_list)
-doc_v = tfidfvectorizer.transform(document_list)
+vectorizer.fit(document_list)
+doc_v = vectorizer.transform(document_list)
 
-vocabulary = tfidfvectorizer.vocabulary_
+# dictionary that maps terms to their position 
+vocabulary = vectorizer.vocabulary_
 
-# retrieve terms found in the corpora
-tfidf_tokens = tfidfvectorizer.get_feature_names_out()
+# retrieve terms found in the corpora; list of all terms learned from the vocabulary by the vectorizer
+tfidf_tokens = vectorizer.get_feature_names_out()
 
 # display term matrix using data frame
-print("TD-IDF Vectorizer \n")
 tfidf_matrix = pd.DataFrame(data = doc_v.toarray(), index = ['Doc1', 'Doc2', 'Doc3', 'Doc4'], columns = tfidf_tokens)
 
 # add documents into mongodb collection
@@ -72,8 +72,8 @@ queries = [
 ]
 
 # vectorize the queries
-query_matrix = tfidfvectorizer.fit_transform(document_list)
-query_vector = tfidfvectorizer.transform(queries)
+query_matrix = vectorizer.fit_transform(document_list)
+query_vector = vectorizer.transform(queries)
 
 # compute pairwise cosine similarity
 cosine_sim = cosine_similarity(query_vector, tfidf_matrix)
