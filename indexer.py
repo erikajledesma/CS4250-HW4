@@ -1,4 +1,3 @@
-import re
 from pymongo import MongoClient
 from sklearn.feature_extraction.text import TfidfVectorizer
 import pandas as pd
@@ -33,6 +32,8 @@ tfidfvectorizer = TfidfVectorizer(analyzer='word', ngram_range=(1,3))
 tfidfvectorizer.fit(document_list)
 doc_v = tfidfvectorizer.transform(document_list)
 
+vocabulary = tfidfvectorizer.vocabulary_
+
 # retrieve terms found in the corpora
 tfidf_tokens = tfidfvectorizer.get_feature_names_out()
 
@@ -41,18 +42,18 @@ print("TD-IDF Vectorizer \n")
 tfidf_matrix = pd.DataFrame(data = doc_v.toarray(), index = ['Doc1', 'Doc2', 'Doc3', 'Doc4'], columns = tfidf_tokens)
 
 # add documents into mongodb collection
-for pos, token in enumerate(tfidf_tokens):
-    docs_with_token = [
+for term, position in vocabulary.items():
+    docs_with_term = [
         {
             "doc_id": doc_id,
-            "tf_idf": tfidf_matrix.at[doc_id, token]
+            "tf_idf": tfidf_matrix.at[doc_id, term]
         }
-        for doc_id in tfidf_matrix.index if tfidf_matrix.at[doc_id, token] > 0
+        for doc_id in tfidf_matrix.index if tfidf_matrix.at[doc_id, term] > 0
     ]
     terms.insert_one({
-        "_id": token,
-        "position": pos,
-        "docs": docs_with_token
+        "_id": position,
+        "position": position,
+        "docs": docs_with_term
     })
 
 # add documents to mongodb documents collection
@@ -79,7 +80,16 @@ cosine_sim = cosine_similarity(query_vector, tfidf_matrix)
 
 # output doc content and score
 for query_index, query in enumerate(queries):
-    print(f"Query: '{query}'")
-    for doc_index, similarity in enumerate(cosine_sim[query_index]):
-        print(f"    '{document_list[doc_index]}', {similarity:.4f}")
+    print(f"Query {query_index + 1}: '{query}'")
+
+    # filter out zero similarities and sort score in descending order
+    scores = [
+        (doc_index, similarity)
+        for doc_index, similarity in enumerate(cosine_sim[query_index])
+        if similarity > 0
+    ]
+    scores = sorted(scores, key=lambda x: x[1], reverse = True)
+
+    for doc_index, similarity in scores:
+        print(f"    '{document_list[doc_index]}', {similarity:.3f}")
     print()
