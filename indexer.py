@@ -1,5 +1,8 @@
 import re
 from pymongo import MongoClient
+from sklearn.feature_extraction.text import TfidfVectorizer
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
 
 # create database connection object using pymongo
 DB_NAME = "hw4"
@@ -23,49 +26,60 @@ document_list = ["After the medication, headache and nausea were reported by the
             "Headache and dizziness are common effects of this medication.",
             "The medication caused a headache and nausea, but no dizziness was reported."]
 
+# instantiate the vectorizer object
+tfidfvectorizer = TfidfVectorizer(analyzer='word', ngram_range=(1,3))
+
+# convert document set into a matrix using .fit_transform()
+tfidfvectorizer.fit(document_list)
+doc_v = tfidfvectorizer.transform(document_list)
+
+# retrieve terms found in the corpora
+tfidf_tokens = tfidfvectorizer.get_feature_names_out()
+
+# display term matrix using data frame
+print("TD-IDF Vectorizer \n")
+tfidf_matrix = pd.DataFrame(data = doc_v.toarray(), index = ['Doc1', 'Doc2', 'Doc3', 'Doc4'], columns = tfidf_tokens)
+
 # add documents into mongodb collection
+for pos, token in enumerate(tfidf_tokens):
+    docs_with_token = [
+        {
+            "doc_id": doc_id,
+            "tf_idf": tfidf_matrix.at[doc_id, token]
+        }
+        for doc_id in tfidf_matrix.index if tfidf_matrix.at[doc_id, token] > 0
+    ]
+    terms.insert_one({
+        "_id": token,
+        "position": pos,
+        "docs": docs_with_token
+    })
+
+# add documents to mongodb documents collection
 doc_id = 1
 for document in document_list:
     docs.insert_one({'_id': doc_id, 'content': document})
     doc_id += 1
 
-# initialize set that contains all words visited
-vocab = {}
+# rank the documents using the vector space model according to the queries
+queries = [
+    "nausea and dizziness",
+    "effects",
+    "nausea was reported",
+    "dizziness",
+    "the medication"
+]
 
-# tokenize documents
-term_id = 1
-for document in docs.find():
-    doc_id = document['_id']
-    content = document['content']
+# vectorize the queries
+query_matrix = tfidfvectorizer.fit_transform(document_list)
+query_vector = tfidfvectorizer.transform(queries)
 
-    # make lowercase and remove punctuation
-    words = re.findall(r'\w+', content.lower())
+# compute pairwise cosine similarity
+cosine_sim = cosine_similarity(query_vector, tfidf_matrix)
 
-    # make unigrams, bigrams and trigrams
-    unigrams = words
-    bigrams = [' '.join(words[i:i+2]) for i in range(len(words) - 1)]
-    trigrams = [' '.join(words[i:i+3]) for i in range(len(words) - 2)]
-
-    n_grams = unigrams + bigrams + trigrams
-
-    print(n_grams)
-
-    # combine all n-grams into single list to use as new words list
-    for word in words:       
-        if word not in vocab:
-            # not visited, so insert new document and add doc_id for term
-            vocab[word] = term_id
-            terms.insert_one({
-                '_id': term_id,
-                'pos': term_id,
-                'docs': [{'doc_id': doc_id}]
-            })
-            term_id+=1
-        else:
-            # visited, so update document with matching term_pos and add to doc_id list
-            term_pos = vocab[word]
-            terms.update_one(
-                {'_id': term_pos},
-                {'$addToSet': {'docs': {'doc_id': doc_id}}}
-            )
-
+# output doc content and score
+for query_index, query in enumerate(queries):
+    print(f"Query: '{query}'")
+    for doc_index, similarity in enumerate(cosine_sim[query_index]):
+        print(f"    '{document_list[doc_index]}', {similarity:.4f}")
+    print()
